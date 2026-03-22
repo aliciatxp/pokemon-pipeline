@@ -102,21 +102,25 @@ def process_receipt(url: str, dry_run: bool = False):
         else:
             en_name = base_en
 
+        qty = item["quantity"]
+        # Buy price on receipt is the total for all copies — divide to get per-card price
+        unit_sgd = round(item["buy_sgd"] / qty, 2) if item["buy_sgd"] and qty > 0 else item["buy_sgd"]
+        unit_jpy = round(item["buy_jpy"] / qty)    if item["buy_jpy"] and qty > 0 else item["buy_jpy"]
+
         row = {
             "card_name_en":  en_name,
             "condition":     item["condition"],
             "set_code":      item["set_code"],
             "card_number":   item["card_number"],
-            "buy_price_sgd": item["buy_sgd"],
+            "buy_price_sgd": unit_sgd,
         }
 
-        qty = item["quantity"]
         for _ in range(qty):
             processed.append(row.copy())
 
-        qty_label = f" ×{qty}" if qty > 1 else ""
+        qty_label = f" ×{qty} (S${unit_sgd} each)" if qty > 1 else ""
         print(f"   [{row_num}] {en_name}{qty_label} | {item['set_code']} {item['card_number']} | "
-              f"¥{item['buy_jpy']} → S${item['buy_sgd']}")
+              f"¥{unit_jpy} → S${unit_sgd}")
         row_num += qty
 
     print(f"\n   Total rows to write: {len(processed)}\n")
