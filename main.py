@@ -18,11 +18,17 @@ from sheets import write_to_sheet
 
 def is_card(item: dict) -> bool:
     """Filter out order totals, shipping lines, and blank rows."""
+    import re as _re
     name      = (item.get("raw_name") or "").strip()
     condition = (item.get("condition_raw") or "").strip()
     price_raw = (item.get("buy_price_yen_raw") or "").strip()
 
-    if not name or not condition:
+    if not name:
+        return False
+
+    # Accept if condition is in condition_raw OR embedded at start of name
+    has_condition = bool(condition) or bool(_re.match(r"^【状態[A-Z][+-]?】", name))
+    if not has_condition:
         return False
     try:
         price_clean = price_raw.replace("¥", "").replace("￥", "").replace(",", "").strip()
@@ -62,7 +68,15 @@ def process_receipt(url: str, dry_run: bool = False):
         quantity  = item.get("quantity", 1)
 
         parsed    = parse_raw_name(raw_name) if raw_name else {}
-        condition = extract_condition_letter(item.get("condition_raw", ""))
+
+        # Condition is usually in condition_raw, but some listings embed it
+        # at the start of the name e.g. '【状態A-】アローラキュウコン PROMO 389/SM-P'
+        condition_raw = item.get("condition_raw", "")
+        condition = (
+            extract_condition_letter(condition_raw)
+            or parsed.get("leading_condition")
+            or ""
+        )
 
         buy_jpy = None
         buy_sgd = None

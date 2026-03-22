@@ -114,7 +114,8 @@ def write_to_sheet(processed_rows: list[dict]) -> tuple[int, int]:
         row[COL_NAME]      = item.get("card_name_en", "")
         row[COL_CONDITION] = item.get("condition", "")
         row[COL_SET]       = set_code
-        row[COL_NUMBER]    = card_number
+        # Prefix with apostrophe so Sheets treats it as plain text (preserves leading zeros)
+        row[COL_NUMBER]    = f"'{card_number}" if card_number else ""
         row[COL_BUY_SGD]   = f"${buy_sgd:.2f}" if isinstance(buy_sgd, float) else ""
         row[COL_SELL_SGD]  = sell_price  # blank if no prior entry found
 
