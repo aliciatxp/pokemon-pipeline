@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 def scrape_receipt(url: str) -> list[dict]:
     """
     Returns a list of dicts with keys:
-        raw_name, condition_raw, buy_price_yen_raw
+        raw_name, condition_raw, buy_price_yen_raw, quantity
     """
     headers = {
         "User-Agent": (
@@ -32,20 +32,32 @@ def scrape_receipt(url: str) -> list[dict]:
         cond_el  = row.select_one(
             "span.product__description__variant.order-summary__small-text"
         )
-        # Try multiple selectors for the price cell
         price_el = (
             row.select_one("td:nth-of-type(3) span") or
             row.select_one(".order-summary__emphasis") or
             row.select_one("td.text-right span")
         )
 
+        # ── Quantity ──────────────────────────────────────────────
+        # XPath: td[1]/div/span  (first cell → div → span)
+        quantity = 1
+        try:
+            qty_el = row.select_one("td:first-child div span")
+            if qty_el:
+                qty_text = qty_el.get_text(strip=True).lstrip("×x✕").strip()
+                parsed_qty = int(qty_text)
+                if 1 <= parsed_qty <= 99:  # sanity check
+                    quantity = parsed_qty
+        except (ValueError, TypeError):
+            quantity = 1
+
         entry = {
             "raw_name":          name_el.get_text(strip=True)  if name_el  else None,
             "condition_raw":     cond_el.get_text(strip=True)  if cond_el  else None,
             "buy_price_yen_raw": price_el.get_text(strip=True) if price_el else None,
+            "quantity":          quantity,
         }
 
-        # Skip completely empty rows
         if any(v for v in entry.values()):
             results.append(entry)
 

@@ -10,35 +10,27 @@ import os
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 from scraper import scrape_receipt
-from parser import parse_raw_name
+from parser import parse_raw_name, extract_condition_letter
 from translator import translate_card_names
 from currency import get_mastercard_jpy_sgd_rate
 from sheets import write_to_sheet
 
 
 def is_card(item: dict) -> bool:
-    """
-    Returns True if this row looks like an actual card.
-    Filters out order totals, shipping lines, and blank rows.
-    A valid card must have a name, a condition, and a parseable price.
-    """
+    """Filter out order totals, shipping lines, and blank rows."""
     name      = (item.get("raw_name") or "").strip()
     condition = (item.get("condition_raw") or "").strip()
     price_raw = (item.get("buy_price_yen_raw") or "").strip()
 
     if not name or not condition:
         return False
-
-    # Order totals have no condition field and prices in the tens of thousands
     try:
         price_clean = price_raw.replace("¥", "").replace("￥", "").replace(",", "").strip()
         price = int(price_clean)
-        # Sanity check: single cards are unlikely to exceed ¥100,000
         if price > 100_000:
             return False
     except (ValueError, TypeError):
         return False
-
     return True
 
 
@@ -49,13 +41,11 @@ def process_receipt(url: str, dry_run: bool = False):
 
     # ── Step 1: Scrape ──────────────────────────────────────────
     print("📦 Step 1: Scraping receipt...")
-    raw_items = scrape_receipt(url)
-
-    # Filter out non-card rows (totals, shipping, blanks)
-    card_items = [item for item in raw_items if is_card(item)]
-    skipped_count = len(raw_items) - len(card_items)
+    raw_items   = scrape_receipt(url)
+    card_items  = [item for item in raw_items if is_card(item)]
+    skipped     = len(raw_items) - len(card_items)
     print(f"   Found {len(raw_items)} row(s) → {len(card_items)} card(s)"
-          + (f", {skipped_count} non-card row(s) skipped" if skipped_count else "")
+          + (f", {skipped} non-card row(s) skipped" if skipped else "")
           + "\n")
 
     # ── Step 2: Get exchange rate ────────────────────────────────
@@ -63,15 +53,16 @@ def process_receipt(url: str, dry_run: bool = False):
     rate, rate_date, rate_source = get_mastercard_jpy_sgd_rate()
     print(f"   Rate: 1 JPY = {rate:.6f} SGD  (source: {rate_source}, date: {rate_date})\n")
 
-    # ── Step 3: Parse all cards, then batch translate ────────────
+    # ── Step 3: Parse all cards ──────────────────────────────────
     print("🃏 Step 3: Parsing cards...")
     parsed_items = []
     for item in card_items:
         raw_name  = item.get("raw_name")
-        condition = item.get("condition_raw", "")
         price_raw = item.get("buy_price_yen_raw", "")
+        quantity  = item.get("quantity", 1)
 
-        parsed = parse_raw_name(raw_name) if raw_name else {}
+        parsed    = parse_raw_name(raw_name) if raw_name else {}
+        condition = extract_condition_letter(item.get("condition_raw", ""))
 
         buy_jpy = None
         buy_sgd = None
@@ -83,13 +74,14 @@ def process_receipt(url: str, dry_run: bool = False):
             pass
 
         parsed_items.append({
-            "raw_name":    raw_name,
-            "condition":   condition,
-            "set_code":    parsed.get("set_code") or "",
-            "card_number": parsed.get("card_number") or "",
-            "jp_name":     parsed.get("pokemon_name_jp") or raw_name or "",
-            "buy_jpy":     buy_jpy,
-            "buy_sgd":     buy_sgd,
+            "jp_name":        parsed.get("pokemon_name_jp") or raw_name or "",
+            "mechanic_suffix": parsed.get("mechanic_suffix"),   # e.g. "ex", "GX", "VMAX"
+            "condition":      condition,
+            "set_code":       parsed.get("set_code") or "",
+            "card_number":    parsed.get("card_number") or "",
+            "buy_jpy":        buy_jpy,
+            "buy_sgd":        buy_sgd,
+            "quantity":       quantity,
         })
 
     # ── Batch translate all names in one API call ────────────────
@@ -97,10 +89,19 @@ def process_receipt(url: str, dry_run: bool = False):
     jp_names   = [item["jp_name"] for item in parsed_items]
     translated = translate_card_names(jp_names)
 
-    # ── Assemble final rows ──────────────────────────────────────
+    # ── Assemble final rows, expanding quantity > 1 ──────────────
     processed = []
-    for i, item in enumerate(parsed_items, 1):
-        en_name = translated.get(item["jp_name"], item["jp_name"])
+    row_num   = 1
+    for item in parsed_items:
+        base_en    = translated.get(item["jp_name"], item["jp_name"])
+        suffix     = item["mechanic_suffix"]
+
+        # Append mechanic suffix to English name if not already present
+        if suffix and not base_en.lower().endswith(suffix.lower()):
+            en_name = f"{base_en} {suffix}"
+        else:
+            en_name = base_en
+
         row = {
             "card_name_en":  en_name,
             "condition":     item["condition"],
@@ -108,11 +109,17 @@ def process_receipt(url: str, dry_run: bool = False):
             "card_number":   item["card_number"],
             "buy_price_sgd": item["buy_sgd"],
         }
-        processed.append(row)
-        print(f"   [{i}] {en_name} | {item['set_code']} {item['card_number']} | "
-              f"¥{item['buy_jpy']} → S${item['buy_sgd']}")
 
-    print()
+        qty = item["quantity"]
+        for _ in range(qty):
+            processed.append(row.copy())
+
+        qty_label = f" ×{qty}" if qty > 1 else ""
+        print(f"   [{row_num}] {en_name}{qty_label} | {item['set_code']} {item['card_number']} | "
+              f"¥{item['buy_jpy']} → S${item['buy_sgd']}")
+        row_num += qty
+
+    print(f"\n   Total rows to write: {len(processed)}\n")
 
     # ── Step 4: Write to Google Sheets ──────────────────────────
     if dry_run:
