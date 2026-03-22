@@ -1,11 +1,16 @@
 """
 Pokemon Card Receipt Pipeline
-Scrapes torecacamp order → parses cards → translates with Claude → converts JPY→SGD → writes to Google Sheets
+Scrapes torecacamp order → parses cards → translates with Gemini → converts JPY→SGD → writes to Google Sheets
 """
 
 import sys
 import json
 import argparse
+# Load .env before anything else
+from dotenv import load_dotenv
+import os
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+
 from scraper import scrape_receipt
 from parser import parse_raw_name
 from translator import translate_card_name
@@ -38,7 +43,7 @@ def process_receipt(url: str, dry_run: bool = False):
         # Parse card fields
         parsed = parse_raw_name(raw_name) if raw_name else {}
 
-        # Translate name using Claude
+        # Translate name using Gemini
         jp_name = parsed.get("pokemon_name_jp") or raw_name
         en_name = translate_card_name(jp_name) if jp_name else None
 
@@ -46,7 +51,6 @@ def process_receipt(url: str, dry_run: bool = False):
         buy_jpy = None
         buy_sgd = None
         try:
-            # Strip yen symbol and commas
             price_clean = price_raw.replace("¥", "").replace("￥", "").replace(",", "").strip()
             buy_jpy = int(price_clean)
             buy_sgd = round(buy_jpy * rate, 2)
@@ -54,14 +58,13 @@ def process_receipt(url: str, dry_run: bool = False):
             pass
 
         row = {
-            "card_name_en":   en_name or "",
-            "condition":      condition or "",
-            "set_code":       parsed.get("set_code") or "",
-            "card_number":    parsed.get("card_number") or "",
-            "buy_price_sgd":  buy_sgd,
-            # internal only (used for sell price lookup, not written as own column)
-            "_raw_name":      raw_name,
-            "_buy_jpy":       buy_jpy,
+            "card_name_en":  en_name or "",
+            "condition":     condition or "",
+            "set_code":      parsed.get("set_code") or "",
+            "card_number":   parsed.get("card_number") or "",
+            "buy_price_sgd": buy_sgd,
+            "_raw_name":     raw_name,
+            "_buy_jpy":      buy_jpy,
         }
         processed.append(row)
 

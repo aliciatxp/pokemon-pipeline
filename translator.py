@@ -4,7 +4,7 @@ translator.py  –  Translates Japanese Pokemon card names using Google Gemini (
 
 import os
 import json
-import google.generativeai as genai
+from google import genai
 
 _client = None
 
@@ -13,13 +13,16 @@ def _get_client():
     if _client is None:
         api_key = os.environ.get("GOOGLE_AI_API_KEY")
         if not api_key:
-            raise EnvironmentError("GOOGLE_AI_API_KEY not set in .env")
-        genai.configure(api_key=api_key)
-        _client = genai.GenerativeModel("gemini-2.0-flash")
+            raise EnvironmentError(
+                "GOOGLE_AI_API_KEY not set. Check your .env file."
+            )
+        _client = genai.Client(api_key=api_key)
     return _client
+
 
 def translate_card_name(jp_name: str) -> str:
     return translate_card_names([jp_name]).get(jp_name, jp_name)
+
 
 def translate_card_names(jp_names: list[str]) -> dict[str, str]:
     if not jp_names:
@@ -38,7 +41,10 @@ def translate_card_names(jp_names: list[str]) -> dict[str, str]:
         f"{json.dumps(unique, ensure_ascii=False, indent=2)}"
     )
 
-    response = client.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-3.1-flash-lite-preview",
+        contents=prompt,
+    )
     raw = response.text.strip().replace("```json", "").replace("```", "").strip()
 
     try:
