@@ -28,6 +28,8 @@ Torecacamp order URL
 
 ## Usage
 
+See [`SETUP_WINDOWS.md`](SETUP_WINDOWS.md)
+
 ```bash
 conda activate pokemon-pipeline
 
@@ -67,20 +69,20 @@ python main.py "https://torecacamp-pokemon.com/.../orders/..." --card visa
 
 Pokemon card names seem simple until you're dealing with them at scale since Pokemon card listings in online shops can vary wildly in formatting, causing traditional dictionary lookups or translation APIs to fall apart. Some examples of the challenges I faced with traditional methods before deciding on using an LLM:
 
-**Mechanic suffixes are baked into the name**
+**Mechanic suffixes are baked into the name:**
 Cards are listed as `ピカチュウex`, `リザードンVMAX`, `ミュウGX` — the mechanic suffix (`ex`, `VMAX`, `GX`) is part of the card identity, not just a descriptor. A naive translator would mangle these or drop them entirely.
 
-**Tag team cards use special characters**
+**Tag team cards use special characters:**
 Cards like `セレビィ＆フシギバナGX` use the full-width `＆` character and combine two Pokemon into one card name. The official English name follows a specific format (`Celebi & Venusaur GX`) that requires knowing both Pokemon names and the convention for writing them together.
 
-**Trainer, item, and stadium cards don't follow Pokemon naming rules**
+**Trainer, item, and stadium cards don't follow Pokemon naming rules:**
 `グズマ` → `Guzma`, `フウとラン` → `Winona`, `シロナ` → `Cynthia` — these are character names with no direct translation. A standard translation API would give you a phonetic mess. An LLM knows the official English card names.
 
-**Regional variants have specific naming conventions**
+**Regional variants have specific naming conventions:**
 `アローラキュウコン` isn't just "Alolan Ninetales" — the official English card name is `Alolan Ninetales`, not `Ninetales (Alola Form)` or any other variant. Same goes for Galarian, Hisuian, and Paldean forms.
 
-**Promo cards often have context-dependent names**
+**Promo cards often have context-dependent names:**
 A promo Pikachu listed as `ピカチュウ` with a special set code could be one of dozens of different cards. The LLM can factor in surrounding context from the listing (set code, card number, rarity) to give a more accurate translation.
 
-**And many other edge cases**
+**And many other edge cases:**
 `ニャビー` → `Litten`, `ウパー` → `Wooper`, `ペロッパフ` → `Swirlix` — these have no phonetic relationship to their English names whatsoever. A rules-based approach would need a manually maintained dictionary of thousands of entries that goes stale with every new set. An LLM handles these out of the box and stays current with newer card sets without any maintenance.
