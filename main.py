@@ -12,7 +12,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 from scraper import scrape_receipt
 from parser import parse_raw_name, extract_condition_letter
 from translator import translate_card_names
-from currency import get_mastercard_jpy_sgd_rate
+from currency import get_rate
 from sheets import write_to_sheet
 
 
@@ -40,7 +40,7 @@ def is_card(item: dict) -> bool:
     return True
 
 
-def process_receipt(url: str, dry_run: bool = False):
+def process_receipt(url: str, dry_run: bool = False, card: str = "mastercard"):
     print(f"\n{'='*60}")
     print(f"Processing receipt: {url}")
     print(f"{'='*60}\n")
@@ -55,8 +55,8 @@ def process_receipt(url: str, dry_run: bool = False):
           + "\n")
 
     # ── Step 2: Get exchange rate ────────────────────────────────
-    print("💱 Step 2: Fetching Mastercard JPY→SGD rate...")
-    rate, rate_date, rate_source = get_mastercard_jpy_sgd_rate()
+    print(f"💱 Step 2: Fetching {card.capitalize()} JPY→SGD rate (incl. 3.25% bank fee)...")
+    rate, rate_date, rate_source = get_rate(card)
     print(f"   Rate: 1 JPY = {rate:.6f} SGD  (source: {rate_source}, date: {rate_date})\n")
 
     # ── Step 3: Parse all cards ──────────────────────────────────
@@ -157,5 +157,8 @@ if __name__ == "__main__":
     parser.add_argument("url", help="Torecacamp order URL")
     parser.add_argument("--dry-run", action="store_true",
                         help="Parse and print without writing to Google Sheets")
+    parser.add_argument("--card", choices=["mastercard", "visa"],
+                        default="mastercard",
+                        help="Card network for exchange rate (default: mastercard)")
     args = parser.parse_args()
-    process_receipt(args.url, dry_run=args.dry_run)
+    process_receipt(args.url, dry_run=args.dry_run, card=args.card)

@@ -1,19 +1,23 @@
 """
-currency.py  –  Fetches the Mastercard JPY → SGD conversion rate.
+currency.py  –  Fetches JPY → SGD conversion rate for Mastercard or Visa.
 
-Strategy:
-  1. Try the Mastercard public converter endpoint (same one their website uses).
-  2. Fall back to frankfurter.app (free, no key required) if Mastercard is unavailable.
+Bank fee: 3.25% applied on top of the base network rate (fixed).
 
-The Mastercard public endpoint is an unofficial but stable CORS-accessible JSON endpoint
-used by mastercard.us/en-us/personal/get-support/convert-currency.html
+Mastercard: uses their public settlement rate endpoint (same one their website uses).
+Visa:       uses ECB mid-market rate (frankfurter.app) as the base — Visa's public
+            calculator is JavaScript-rendered with no scrapeable API endpoint, but
+            their rates track ECB mid-market very closely.
+
+Fallback for both: frankfurter.app if the primary source fails.
 """
 
 import requests
 from datetime import date, timedelta
 
+BANK_FEE_PCT = 3.25   # fixed, applied to both card networks
 
-# ── Mastercard public endpoint ─────────────────────────────────────────────────
+
+# ── Mastercard ─────────────────────────────────────────────────────────────────
 
 MC_URL = "https://www.mastercard.us/settlement/currencyrate/conversion-rate"
 MC_HEADERS = {
@@ -27,23 +31,17 @@ MC_HEADERS = {
 
 
 def _fetch_mastercard_rate(transaction_date: str) -> float | None:
-    """
-    Hit Mastercard's settlement rate endpoint.
-    transaction_date: YYYY-MM-DD
-    Returns the JPY→SGD rate or None on failure.
-    """
     params = {
-        "fxDate":             transaction_date,
-        "transCurr":          "JPY",
-        "crdhldBillCurr":     "SGD",
-        "bankFee":            "0",      # 0% bank fee — add your card's fee if known
-        "transAmt":           "1",
+        "fxDate":         transaction_date,
+        "transCurr":      "JPY",
+        "crdhldBillCurr": "SGD",
+        "bankFee":        "0",
+        "transAmt":       "1",
     }
     try:
         resp = requests.get(MC_URL, params=params, headers=MC_HEADERS, timeout=10)
         resp.raise_for_status()
         data = resp.json()
-        # Response shape: {"data": {"conversionRate": 0.00892, ...}}
         rate = data.get("data", {}).get("conversionRate")
         if rate:
             return float(rate)
@@ -52,34 +50,64 @@ def _fetch_mastercard_rate(transaction_date: str) -> float | None:
     return None
 
 
+# ── Frankfurter (ECB mid-market) ───────────────────────────────────────────────
+
 def _fetch_frankfurter_rate() -> tuple[float, str]:
-    """
-    Fallback: frankfurter.app free API (ECB-based rates, updated daily).
-    Returns (rate, date_str).
-    """
     url = "https://api.frankfurter.app/latest?from=JPY&to=SGD"
     resp = requests.get(url, timeout=10)
     resp.raise_for_status()
     data = resp.json()
-    rate = data["rates"]["SGD"]
-    return float(rate), data["date"]
+    return float(data["rates"]["SGD"]), data["date"]
 
 
-def get_mastercard_jpy_sgd_rate() -> tuple[float, str, str]:
+# ── Public interface ───────────────────────────────────────────────────────────
+
+def get_rate(card: str = "mastercard") -> tuple[float, str, str]:
     """
-    Returns (rate, date_str, source_label).
+    Returns (rate_with_fee, date_str, source_label).
 
-    Tries today's Mastercard rate, then yesterday's (rates are published with a lag),
-    then falls back to Frankfurter.
+    The rate already includes the 3.25% bank fee, so it can be applied
+    directly to JPY amounts to get the final SGD cost.
+
+    card: "mastercard" or "visa"
     """
+    card = card.lower().strip()
     today = date.today()
+    base_rate = None
+    rate_date = None
+    source = None
 
-    for delta in [0, 1, 2]:
-        check_date = (today - timedelta(days=delta)).strftime("%Y-%m-%d")
-        rate = _fetch_mastercard_rate(check_date)
-        if rate:
-            return rate, check_date, "Mastercard"
+    if card == "mastercard":
+        for delta in [0, 1, 2]:
+            check_date = (today - timedelta(days=delta)).strftime("%Y-%m-%d")
+            r = _fetch_mastercard_rate(check_date)
+            if r:
+                base_rate = r
+                rate_date = check_date
+                source = "Mastercard"
+                break
 
-    # Fallback
-    rate, rate_date = _fetch_frankfurter_rate()
-    return rate, rate_date, "Frankfurter (ECB fallback)"
+    elif card == "visa":
+        # Visa's public calculator has no scrapeable API endpoint.
+        # ECB mid-market (frankfurter) is used as the base rate —
+        # this closely tracks Visa's actual network rate before bank fee.
+        source = "Visa (ECB mid-market base)"
+
+    else:
+        raise ValueError(f"Unknown card network: '{card}'. Use 'mastercard' or 'visa'.")
+
+    # Fallback for Mastercard failure, or primary source for Visa
+    if base_rate is None:
+        base_rate, rate_date = _fetch_frankfurter_rate()
+        if card == "mastercard":
+            source = "Frankfurter (ECB fallback)"
+        else:
+            rate_date = rate_date  # already set above
+
+    if card == "visa" and rate_date is None:
+        base_rate, rate_date = _fetch_frankfurter_rate()
+
+    # Apply 3.25% bank fee
+    rate_with_fee = round(base_rate * (1 + BANK_FEE_PCT / 100), 8)
+
+    return rate_with_fee, rate_date, source
