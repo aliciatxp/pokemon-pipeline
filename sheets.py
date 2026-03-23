@@ -2,24 +2,22 @@
 sheets.py  –  Writes processed card rows to Google Sheets.
 
 Sheet layout (columns A–J):
-  A: Batch Number       ← never touched
+  A: Batch Number       ← written by this script (auto-incremented)
   B: Card Name (EN)     ← written by this script
   C: Condition          ← written by this script
   D: Set                ← written by this script
   E: Card Number        ← written by this script
-  F: Date Bought        ← never touched
+  F: Date Bought        ← written by this script (today's date)
   G: Buy Price (SGD)    ← written by this script
   H: Wanted Sell Price  ← never touched (may contain formulas)
   I: Date Sold          ← never touched
   J: Sale Price         ← never touched
 
-Strategy:
-  - Find the first empty row in column B
-  - Write ONLY columns B, C, D, E, G using individual range updates
-  - Never write a full row — this guarantees other columns are untouched
+Columns H, I, J are never written — safe for formulas.
 """
 
 import os
+from datetime import date
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -29,15 +27,6 @@ SCOPES           = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_ID         = os.environ.get("GOOGLE_SHEET_ID", "")
 SHEET_TAB        = os.environ.get("GOOGLE_SHEET_TAB", "Sheet1")
 CREDENTIALS_FILE = os.environ.get("GOOGLE_CREDENTIALS_FILE", "credentials.json")
-
-# Columns to write (A=1, B=2, ... in Sheets API 1-based notation)
-WRITE_COLS = {
-    "B": "card_name_en",
-    "C": "condition",
-    "D": "set_code",
-    "E": "card_number",
-    "G": "buy_price_sgd",
-}
 
 
 # ── Auth ───────────────────────────────────────────────────────────────────────
@@ -56,19 +45,32 @@ def _get_service():
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _find_first_empty_row(sheet, sheet_id: str, tab: str) -> int:
-    """
-    Returns the 1-based row number of the first empty cell in column B.
-    Scans column B only — never reads other columns.
-    """
+def _find_first_empty_row(sheet) -> int:
+    """First empty row in column B (1-based)."""
     result = sheet.values().get(
-        spreadsheetId=sheet_id,
-        range=f"{tab}!B:B",
+        spreadsheetId=SHEET_ID,
+        range=f"{SHEET_TAB}!B:B",
+    ).execute()
+    return len(result.get("values", [])) + 1
+
+
+def _get_next_batch_number(sheet) -> int:
+    """Read column A, find the highest batch number, return it + 1."""
+    result = sheet.values().get(
+        spreadsheetId=SHEET_ID,
+        range=f"{SHEET_TAB}!A:A",
     ).execute()
     values = result.get("values", [])
-    # values is a list of 1-element lists e.g. [["Card Name"], ["Pikachu"], ...]
-    # First empty row is len(values) + 1 (1-based)
-    return len(values) + 1
+    max_batch = 0
+    for row in values[1:]:  # skip header
+        if row:
+            try:
+                val = int(row[0])
+                if val > max_batch:
+                    max_batch = val
+            except (ValueError, TypeError):
+                pass
+    return max_batch + 1
 
 
 # ── Main write function ────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ def _find_first_empty_row(sheet, sheet_id: str, tab: str) -> int:
 def write_to_sheet(processed_rows: list[dict]) -> tuple[int, int]:
     """
     Append rows to the sheet starting at the first empty row in column B.
-    Writes ONLY columns B, C, D, E, G — all other columns are never touched.
+    Writes columns A, B, C, D, E, F, G only — H, I, J are never touched.
     Returns (written_count, skipped_count).
     """
     if not SHEET_ID:
@@ -84,33 +86,40 @@ def write_to_sheet(processed_rows: list[dict]) -> tuple[int, int]:
     if not processed_rows:
         return 0, 0
 
-    service = _get_service()
-    sheet   = service.spreadsheets()
+    service   = _get_service()
+    sheet     = service.spreadsheets()
 
-    start_row = _find_first_empty_row(sheet, SHEET_ID, SHEET_TAB)
-    n         = len(processed_rows)
-    end_row   = start_row + n - 1
+    start_row   = _find_first_empty_row(sheet)
+    batch_num   = _get_next_batch_number(sheet)
+    today_str   = date.today().strftime("%d/%m/%Y")  # dd/MM/yyyy e.g. 24/03/2026
+    n           = len(processed_rows)
+    end_row     = start_row + n - 1
 
-    # Build column data — one list per column
-    col_data = {col: [] for col in WRITE_COLS}
+    # Build per-column value lists
+    col_A, col_B, col_C, col_D, col_E, col_F, col_G = [], [], [], [], [], [], []
 
     for item in processed_rows:
-        col_data["B"].append([item.get("card_name_en", "")])
-        col_data["C"].append([item.get("condition", "")])
-        col_data["D"].append([item.get("set_code", "")])
-        # Apostrophe prefix forces Sheets to treat as plain text (preserves leading zeros)
         card_number = item.get("card_number", "")
-        col_data["E"].append([f"'{card_number}" if card_number else ""])
-        buy_sgd = item.get("buy_price_sgd", "")
-        col_data["G"].append([round(buy_sgd, 2) if isinstance(buy_sgd, float) else ""])
+        buy_sgd     = item.get("buy_price_sgd", "")
 
-    # Build batch update — one ValueRange per column
-    data = []
-    for col, values in col_data.items():
-        data.append({
-            "range":  f"{SHEET_TAB}!{col}{start_row}:{col}{end_row}",
-            "values": values,
-        })
+        col_A.append([batch_num])
+        col_B.append([item.get("card_name_en", "")])
+        col_C.append([item.get("condition", "")])
+        col_D.append([item.get("set_code", "")])
+        col_E.append([f"'{card_number}" if card_number else ""])  # plain text
+        col_F.append([today_str])
+        col_G.append([round(buy_sgd, 2) if isinstance(buy_sgd, float) else ""])
+
+    # One ValueRange per column — H, I, J untouched
+    data = [
+        {"range": f"{SHEET_TAB}!A{start_row}:A{end_row}", "values": col_A},
+        {"range": f"{SHEET_TAB}!B{start_row}:B{end_row}", "values": col_B},
+        {"range": f"{SHEET_TAB}!C{start_row}:C{end_row}", "values": col_C},
+        {"range": f"{SHEET_TAB}!D{start_row}:D{end_row}", "values": col_D},
+        {"range": f"{SHEET_TAB}!E{start_row}:E{end_row}", "values": col_E},
+        {"range": f"{SHEET_TAB}!F{start_row}:F{end_row}", "values": col_F},
+        {"range": f"{SHEET_TAB}!G{start_row}:G{end_row}", "values": col_G},
+    ]
 
     sheet.values().batchUpdate(
         spreadsheetId=SHEET_ID,
@@ -120,4 +129,5 @@ def write_to_sheet(processed_rows: list[dict]) -> tuple[int, int]:
         },
     ).execute()
 
+    print(f"   Batch #{batch_num} | Date: {today_str}")
     return n, 0
