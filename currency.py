@@ -13,6 +13,8 @@ Fallback for both: frankfurter.app if the primary source fails.
 
 import requests
 from datetime import date, timedelta
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 BANK_FEE_PCT = 3.25   # fixed, applied to both card networks
 
@@ -54,7 +56,7 @@ def _fetch_mastercard_rate(transaction_date: str) -> float | None:
 
 def _fetch_frankfurter_rate() -> tuple[float, str]:
     url = "https://api.frankfurter.app/latest?from=JPY&to=SGD"
-    resp = requests.get(url, timeout=10)
+    resp = requests.get(url, timeout=60, verify=False)
     resp.raise_for_status()
     data = resp.json()
     return float(data["rates"]["SGD"]), data["date"]

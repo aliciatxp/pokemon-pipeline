@@ -32,6 +32,8 @@ SET_CODE_RE = re.compile(
     r"(SV\d+[A-Za-z]*)|"    # SV1a, SV2a, SV11B
     r"(S\d+[A-Za-z]*)|"     # S1a, S12a, SM8b, SM11a
     r"(SM\d+[A-Za-z]?)|"    # SM10, SM4+, SM8, SM9b
+    r"(XY\d+[A-Za-z]*)|"    # XY1, XY8, XYP
+    r"(BW\d+[A-Za-z]*)|"    # BW1, BW3, BW9
     r"(MBG)|"
     r"(M\d+[A-Za-z]?)|"     # M1S, M2a, M3
     r"(SI)|"
