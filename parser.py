@@ -23,6 +23,7 @@ PROMO_SET_MAP = {
     "SM-P":  "SM-P",
     "XY-P":  "XY-P",
     "BW-P":  "BW-P",
+    "S-P":   "S-P",
     "DP-P":  "DP-P",
     "PCG-P": "PCG-P",
     "ADV-P": "ADV-P",
@@ -34,12 +35,14 @@ SET_CODE_RE = re.compile(
     r"(SM\d+[A-Za-z]?)|"    # SM10, SM4+, SM8, SM9b
     r"(XY\d+[A-Za-z]*)|"    # XY1, XY8, XYP
     r"(BW\d+[A-Za-z]*)|"    # BW1, BW3, BW9
+    r"(SEK|SEF|CLL)|"       # ← SWSH mini sets
+    r"(Pt\d+[A-Za-z]*)|"    # ← Platinum era: Pt1, Pt4
     r"(MBG)|"
     r"(M\d+[A-Za-z]?)|"     # M1S, M2a, M3
     r"(SI)|"
     r"(neoPROMO)|"
     r"(SWSH\d+[A-Za-z]*)|"  # SWSH era
-    r"(PROMO)",              # generic PROMO fallback (resolved via card number below)
+    r"(PROMO)",              # generic PROMO fallback
     re.IGNORECASE,
 )
 
