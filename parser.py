@@ -30,19 +30,21 @@ PROMO_SET_MAP = {
 }
 
 SET_CODE_RE = re.compile(
+    r"(SVOM)|"               # ← must be before SV\d+
     r"(SV\d+[A-Za-z]*)|"    # SV1a, SV2a, SV11B
     r"(S\d+[A-Za-z]*)|"     # S1a, S12a, SM8b, SM11a
     r"(SM\d+[A-Za-z]?)|"    # SM10, SM4+, SM8, SM9b
     r"(XY\d+[A-Za-z]*)|"    # XY1, XY8, XYP
     r"(BW\d+[A-Za-z]*)|"    # BW1, BW3, BW9
-    r"(SEK|SEF|CLL)|"       # ← SWSH mini sets
-    r"(Pt\d+[A-Za-z]*)|"    # ← Platinum era: Pt1, Pt4
+    r"(SEK|SEF|CLL)|"       # SWSH mini sets
+    r"(Pt\d+[A-Za-z]*)|"    # Platinum era: Pt1, Pt4
+    r"(L\d+[A-Za-z]*)|"     # HGSS era: L1, L2, L1SS
     r"(MBG)|"
     r"(M\d+[A-Za-z]?)|"     # M1S, M2a, M3
     r"(SI)|"
     r"(neoPROMO)|"
     r"(SWSH\d+[A-Za-z]*)|"  # SWSH era
-    r"(PROMO)",              # generic PROMO fallback
+    r"(PROMO)",
     re.IGNORECASE,
 )
 
