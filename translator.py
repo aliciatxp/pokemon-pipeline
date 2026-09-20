@@ -43,7 +43,7 @@ def translate_card_names(jp_names: list[str]) -> dict[str, str]:
     )
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3-flash-preview",
         contents=prompt,
     )
     raw = response.text.strip().replace("```json", "").replace("```", "").strip()
