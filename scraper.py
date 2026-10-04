@@ -155,20 +155,20 @@ def scrape_receipt(url: str) -> list[dict]:
             if price_span:
                 price_raw = price_span.get_text(strip=True)
 
+        # Quantity: find by text content instead of fragile class names
         quantity = 1
-
-        qty_span = row.find("span", class_="_1m6j2n31b")
-
-        if qty_span:
-            next_sibling = qty_span.next_sibling
-
-            if next_sibling:
-                try:
-                    q = int(str(next_sibling).strip())
-                    if 1 <= q <= 99:
-                        quantity = q
-                except (ValueError, TypeError):
-                    pass
+        for span in row.find_all("span"):
+            text = span.get_text(strip=True)
+            if text in ("数量", "Quantity"):
+                sibling = span.next_sibling
+                if sibling:
+                    try:
+                        q = int(str(sibling).strip())
+                        if 1 <= q <= 99:
+                            quantity = q
+                    except (ValueError, TypeError):
+                        pass
+                break
 
         results.append(
             {
