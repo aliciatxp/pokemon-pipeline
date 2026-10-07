@@ -42,11 +42,24 @@ def translate_card_names(jp_names: list[str]) -> dict[str, str]:
         f"{json.dumps(unique, ensure_ascii=False, indent=2)}"
     )
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=prompt,
-    )
-    raw = response.text.strip().replace("```json", "").replace("```", "").strip()
+    models = ["gemini-3-flash-preview", "gemini-3.1-flash-lite"]
+    raw = None
+
+    for model in models:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+            )
+            raw = response.text.strip().replace("```json", "").replace("```", "").strip()
+            print(f"   (translated using {model})")
+            break
+        except Exception as e:
+            print(f"   ⚠️  {model} failed: {e}. Trying next model...")
+
+    if raw is None:
+        print("   ⚠️  All models failed, using original names.")
+        return {name: name for name in jp_names}
 
     try:
         mapping = json.loads(raw)
@@ -54,5 +67,4 @@ def translate_card_names(jp_names: list[str]) -> dict[str, str]:
         print(f"  ⚠️  Translation parse error, using original names. Raw: {raw[:200]}")
         mapping = {}
 
-    # Return mapping for all input names (including duplicates), fall back to original
     return {name: mapping.get(name, name) for name in jp_names}
